@@ -1,0 +1,2011 @@
+8.1 - 8.7 GraphQL - Server
+
+const { ApolloServer, gql } = require('apollo-server')
+const uuid = require('uuid/v1')
+
+
+let authors = [
+	{
+		name: 'Robert Martin',
+		id: "afa51ab0-344d-11e9-a414-719c6709cf3e",
+		born: 1952
+	},
+	{
+		name: 'Martin Fowler',
+		id: "afa5b6f0-344d-11e9-a414-719c6709cf3e",
+		born: 1963
+	},
+	{
+		name: 'Fyodor Dostoevsky',
+		id: "afa5b6f1-344d-11e9-a414-719c6709cf3e",
+		born: 1821
+	},
+	{ 
+		name: 'Joshua Kerievsky', 
+		id: "afa5b6f2-344d-11e9-a414-719c6709cf3e",
+	},
+	{ 
+		name: 'Sandi Metz', 
+		id: "afa5b6f3-344d-11e9-a414-719c6709cf3e",
+	}
+]
+
+
+let books = [
+	{
+		title: 'Clean Code',
+		published: 2008,
+		author: 'Robert Martin',
+		id: "afa5b6f4-344d-11e9-a414-719c6709cf3e",
+		genres: ['refactoring']
+	},
+	{
+		title: 'Agile software development',
+		published: 2002,
+		author: 'Robert Martin',
+		id: "afa5b6f5-344d-11e9-a414-719c6709cf3e",
+		genres: ['agile', 'patterns', 'design']
+	},
+	{
+		title: 'Refactoring, edition 2',
+		published: 2018,
+		author: 'Martin Fowler',
+		id: "afa5de00-344d-11e9-a414-719c6709cf3e",
+		genres: ['refactoring']
+	},
+	{
+		title: 'Refactoring to patterns',
+		published: 2008,
+		author: 'Joshua Kerievsky',
+		id: "afa5de01-344d-11e9-a414-719c6709cf3e",
+		genres: ['refactoring', 'patterns']
+	},  
+	{
+		title: 'Practical Object-Oriented Design, An Agile Primer Using Ruby',
+		published: 2012,
+		author: 'Sandi Metz',
+		id: "afa5de02-344d-11e9-a414-719c6709cf3e",
+		genres: ['refactoring', 'design']
+	},
+	{
+		title: 'Crime and punishment',
+		published: 1866,
+		author: 'Fyodor Dostoevsky',
+		id: "afa5de03-344d-11e9-a414-719c6709cf3e",
+		genres: ['classic', 'crime']
+	},
+	{
+		title: 'The Demon',
+		published: 1872,
+		author: 'Fyodor Dostoevsky',
+		id: "afa5de04-344d-11e9-a414-719c6709cf3e",
+		genres: ['classic', 'revolution']
+	}
+]
+
+
+const typeDefs = gql`
+	type Book {
+		title: String!
+		published: Int!
+		author: String!
+		id: ID!
+		genres: [String!]!
+	}
+	
+	type Author {
+		name: String!
+		id: ID!
+		born: Int
+		bookCount: Int!
+	}
+	
+	type Query {
+		authorCount: Int!
+		allBooks(author: String!, genre: String!): [Book!]!
+		allAuthors: [Author!]!
+	}
+	
+	type Mutation {
+		addBook(
+			title: String!
+			published: Int!
+			author: String!
+			genres: [String!]!
+		): Book
+		
+		editAuthor(
+			name: String!
+			setBornTo: Int!
+		): Author
+	}
+`
+
+
+const resolvers = {
+	Query: {
+		authorCount: () => authors.length,
+		allBooks: (root, args) => books.filter(b => b.genres.find(g => g === args.genre) === args.genre).filter(b => b.author === args.author),
+		allAuthors: () => {
+			return authors.map(a => {
+				return {
+					bookCount: books.filter(b => b.author === a.name).length,
+					...a
+				}
+			})
+		}
+	},
+	
+	Mutation: {
+		addBook: (root, args) => {
+			const book = {...args, id: uuid()}
+			books = books.concat(book)
+			
+			const author = authors.find(a => a.name === book.author)
+			
+			if (!author) {
+				const updatedAuthor = {
+					name: book.author,
+					born: null,
+					id: uuid()
+				}
+				
+				authors = authors.concat(updatedAuthor)
+			}
+			
+			return book
+		},
+		
+		editAuthor: (root, args) => {
+			const author = authors.find(a => a.name === args.name)
+			if (!author) {
+				return null
+			}
+			
+			const updatedAuthor = {...author, born: args.setBornTo}
+			authors = authors.map(a => a.name === args.name ? updatedAuthor : a)
+			return updatedAuthor
+		}
+	}
+}
+
+
+const server = new ApolloServer({
+	typeDefs,
+	resolvers
+})
+
+
+server.listen().then(({ url }) => {
+	console.log(`Server ready at ${url}`)
+})
+
+
+
+8.8 - 8. 12 GraphQL - Frontend 
+
+import React, { useState } from 'react'
+import ReactDOM from 'react-dom'
+import { BrowserRouter as Router,Route, Link } from 'react-router-dom'
+import ApolloClient, { gql } from 'apollo-boost'
+import { ApolloProvider, Query, Mutation } from 'react-apollo'
+
+
+const client = new ApolloClient({
+	uri: "http://localhost:4000/graphql"
+})
+
+
+const query = gql`
+{
+	allAuthors {
+		id
+		name
+		born
+		bookCount
+	}
+}
+`
+
+
+const query_books = gql`
+{
+	allBooks {
+		id
+		title
+		published
+		author
+	}
+}
+`
+
+
+const CREATE_BOOK = gql`
+	mutation createBook($title: String!, $published: Int!, $author: String!, $genres: [String!]!) {
+		addBook(
+			title: $title,
+			published: $published,
+			author: $author,
+			genres: $genres,
+		) {	
+			title
+			published
+			author
+			id
+			genres
+		}
+	}
+`
+
+
+const EDIT_AUTHOR = gql`
+	mutation editAuthor($name: String!, $setBornTo: Int!) {
+		editAuthor(
+			name: $name,
+			setBornTo: $setBornTo
+		) {
+			name
+			id
+			born
+		}
+	}
+`
+
+
+const Home = () => {
+	return(
+		<div>
+			<h1>Welcome to Book Club !</h1>
+		</div>
+	)
+}
+
+
+const AuthorForm = (props) => {
+	const [ name, setName ] = useState('')
+	const [ born, setBorn ] = useState('')
+	
+	const handleSetBirth = async(event) => {
+		event.preventDefault()
+		
+		const setBornTo = Number(born)
+		
+		await props.editAuthor({
+			variables: { name, setBornTo }
+		})
+		
+		setName('')
+		setBorn('')
+	}
+	
+	return (
+		<div>
+			<form onSubmit = {handleSetBirth}>
+				<div>
+					Name: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+					<input value = {name} onChange = {(event) => setName(event.target.value)} />
+				</div>
+				
+				<br />
+				
+				<div>
+					Birthday: &nbsp;&nbsp;&nbsp;
+					<input value = {born} onChange = {(event) => setBorn(event.target.value)} />
+				</div>
+				
+				<br />
+				
+				<button type = 'submit'>Change Birthday</button>
+			</form>
+		</div>
+	)
+}
+
+
+const Authors = () => {
+	return(
+		<div>
+			<h2>Authors</h2>
+			<Query query = {query}>
+				{(result) => {
+					if (result.loading) {
+						return <div>Loading...</div>
+					}
+					return (
+						<div>
+							<table>
+								<thead>
+									<tr>
+										<th>&nbsp;</th>
+										<th>Born</th>
+										<th>Books</th>
+									</tr>
+								</thead>
+								
+								{result.data.allAuthors.map(a => 
+									<tbody key = {a.id}>
+										<tr>
+											<td>{a.name}</td>
+											<td>{a.born}</td>
+											<td>&nbsp;&nbsp;&nbsp;{a.bookCount}</td>
+										</tr>
+									</tbody>
+								)}
+							</table>
+						</div>
+					)
+				}	
+					
+				}
+			</Query>
+			
+			<br />
+			<br />
+			<br />
+			
+			<h2>Set Birthday</h2>
+			<Mutation mutation = {EDIT_AUTHOR}>
+				{(editAuthor) => <AuthorForm editAuthor = {editAuthor} />}
+			</Mutation>
+		</div>
+	)
+}
+
+
+
+const Books = () => {
+	return(
+		<div>
+			<h2>Books</h2>
+			<Query query = {query_books}>
+				{(result) => {
+					if (result.loading) {
+						return <div>Loading...</div>
+					}
+					return (
+						<div>
+							<table>
+								<thead>
+									<tr>
+										<th>&nbsp;</th>
+										<th>Author</th>
+										<th>Published</th>
+									</tr>
+								</thead>
+							
+								{result.data.allBooks.map(b =>
+									<tbody key = {b.id}>
+										<tr>
+											<td>{b.title}</td>
+											<td>{b.author}</td>
+											<td>{b.published}</td>
+										</tr>
+									</tbody>
+								)}
+							</table>
+						</div>
+					)
+				}}
+			</Query>
+		</div>
+	)
+}
+
+
+
+const BookForm = (props) => {
+	const [ title, setTitle ] = useState('')
+	const [ published_String, setPublished ] = useState('')
+	const [ author, setAuthor ] = useState('')
+	const [ genre, setGenre ] = useState('')
+	const [ genres, setGenres ] = useState([])
+	
+	const handleAddGenre = () => {
+		setGenres(genres.concat(genre))
+		setGenre('')
+	}
+	
+	const handleAddBook = async(event) => {
+		event.preventDefault()
+		const published = Number(published_String)
+		await props.addBook({ 
+			variables: {title, published, author, genres}
+	})
+	
+		setTitle('')
+		setPublished('')
+		setAuthor('')
+		setGenres([])
+	}
+	
+	return(
+		<div>
+			<div>
+				Title: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+				<input value = {title} onChange = {(event) => setTitle(event.target.value)} />
+			</div>
+			
+			<br />
+			
+			<div>
+				Published: &nbsp;&nbsp;
+				<input value = {published_String} onChange = {(event) => setPublished(event.target.value)} />
+			</div>
+			
+			<br />
+			
+			<div>
+				Author: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+				<input value = {author} onChange = {(event) => setAuthor(event.target.value)} />
+			</div>
+			
+			<br />
+			
+			<div>
+				Genre: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+				<input value = {genre} onChange = {(event) => setGenre(event.target.value)} />
+				&nbsp;&nbsp;&nbsp;
+				<button onClick = {handleAddGenre}>Add Genre</button>
+				<br />
+				&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+				Genres: {genres.join(', ')}
+			</div>
+			
+			<br />
+			<br />
+			<br />
+			
+			<button onClick = {handleAddBook}>Create Book</button>
+		</div>
+	)
+}
+	
+	
+
+const Addition = () => {
+	return(
+		<div>
+			<h2>Add Books</h2>
+			
+			<br />
+			<br />
+			
+			<Mutation mutation = {CREATE_BOOK}>
+				{(addBook) => <BookForm addBook = {addBook} />}
+			</Mutation>
+		</div>
+	)
+}
+
+
+
+const App = () => {
+	return(
+		<div>
+			<Router>
+				<div>
+					<Link to = "/">Home</Link> &nbsp;&nbsp;&nbsp;
+					<Link to = "/authors">Authors</Link> &nbsp;&nbsp;&nbsp;
+					<Link to = "/books">Books</Link> &nbsp;&nbsp;&nbsp;
+					<Link to = "/add_book">Add Book</Link> &nbsp;&nbsp;&nbsp;
+				</div>
+				
+				<div>
+					<Route exact path = "/" render = {() => <Home />} />
+					<Route path = "/authors" render = {() => <Authors />} />
+					<Route path = "/books" render = {() => <Books />} />
+					<Route path = "/add_book" render = {() => <Addition />} />
+				</div>
+				
+				<br />
+				<br />
+				<br />
+				
+				<em>BookClub Website Created by Daisy on 2019</em>
+			</Router>
+		</div>
+	)
+}
+
+
+
+ReactDOM.render(
+	<ApolloProvider client={client} >
+		<App />
+	</ApolloProvider>, 
+	document.getElementById('root')
+)
+
+
+
+8. 17 - 8. 26 
+
+************************************************************************************************************************
+const mongoose = require('mongoose')
+const uniqueValidator = require('mongoose-unique-validator')
+
+
+
+const authorSchema = new mongoose.Schema({
+	name: {
+		type: String,
+		required: true,
+		unique: true
+	},
+	born: Number,
+	books: [
+		{
+			type: mongoose.Schema.Types.ObjectId,
+			ref: 'Book'
+		}
+	]
+})
+
+
+
+authorSchema.plugin(uniqueValidator)
+module.exports = mongoose.model('Author', authorSchema)
+
+************************************************************************************************************************
+const mongoose = require('mongoose')
+const uniqueValidator = require('mongoose-unique-validator')
+
+
+
+const bookSchema = new mongoose.Schema({
+	title: {
+		type: String,
+		required: true
+	},
+	published: {
+		type: Number,
+		required: true
+	},
+	genres: [
+		{type: String}
+	],
+	author: {
+		type: mongoose.Schema.Types.ObjectId,
+		ref: 'Author'
+	}
+})
+
+
+
+bookSchema.plugin(uniqueValidator)
+module.exports = mongoose.model('Book', bookSchema)
+
+************************************************************************************************************************
+const mongoose = require('mongoose')
+const uniqueValidator = require('mongoose-unique-validator')
+
+
+
+const userSchema = new mongoose.Schema({
+	username: {
+		type: String,
+		required: true,
+		unique: true,
+		minlength: 3
+	},
+	passwordHash: {
+		type: String,
+		required: true,
+	},
+	favoriteGenre: {
+		type: String,
+		required: true
+	}
+})
+
+
+
+userSchema.plugin(uniqueValidator)
+module.exports = mongoose.model('User', userSchema)
+
+************************************************************************************************************************
+const { ApolloServer, UserInputError, gql, PubSub } = require('apollo-server')
+const mongoose = require('mongoose')
+const Author = require('./author')
+const Book = require('./book')
+const User = require('./user')
+const jwt = require('jsonwebtoken')
+const bcrypt = require('bcrypt')
+const pubsub = new PubSub()
+
+
+
+const JWT_SECRET = 'NEED_HERE_A_SECRET_KEY'
+
+
+
+mongoose.set('useFindAndModify', false )
+
+
+const MONGODB_URI = 'mongodb+srv://daisy:dailirong_1992@cluster0-vrqjx.mongodb.net/BookLists?retryWrites=true&w=majority'
+
+
+
+console.log('connecting to', MONGODB_URI)
+
+
+
+mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useCreateIndex: true, useUnifiedTopology: true })
+	.then(() => {
+		console.log('connected to MongoDB')
+	})
+	.catch((error) => {
+		console.log('error connection to MongoDB:', error.message)
+	})
+
+
+
+const typeDefs = gql`
+	type Author {
+		name: String!
+		born: Int
+		bookCount: Int
+		id: ID!
+	}
+	
+	type Book {
+		title: String!
+		published: Int!
+		author: Author!
+		genres: [String!]!
+		id: ID!
+	}
+	
+	type User {
+		username: String!
+		passwordHash: String!
+		favoriteGenre:String!
+		id: ID!
+	}
+	
+	type Token {
+		value: String!
+	}
+	
+	type Query {
+		authorCount: Int!
+		allAuthors: [Author!]!
+		allBooks: [Book!]!
+		bookCount: Int!
+		findBooks(name: String!): [Book!]!
+		findAuthor(id: ID!): Author!
+		me: User
+	}
+	
+	type Mutation {
+		addBook(
+			title: String!
+			published: Int!
+			genres: [String!]!
+			authorName: String!
+		): Book
+		editAuthor(
+			name: String!
+			setBornTo: Int
+		): Author
+		createUser(
+			username: String!
+			password: String!
+			favoriteGenre: String!
+		): User
+		login(
+			username: String!
+			password: String!
+		): Token
+	}
+	
+	type Subscription {
+		bookAdded: Book!
+	}
+`
+
+
+
+const resolvers = {	
+	Query: {
+		authorCount: () => Author.collection.countDocuments(),
+		allAuthors: async (root, args) => {
+			const authors = await Author.find({})
+			
+			// console.log(authors)
+			
+			const updatedAuthors = authors.map(a => {
+				return {
+					name: a.name,
+					born: a.born === undefined ? null : a.born,
+					id: a._id,
+					bookCount: a.books.length
+				}
+			})
+			
+			// console.log(updatedAuthors)
+			return updatedAuthors
+		},
+		bookCount: () => Book.collection.countDocuments(),
+		allBooks: (root, args) => {
+			return Book.find({}).populate('author')
+		},
+		findBooks: async (root, args) => {
+			const books = await Book.find({}).populate('author')
+			const booksAsked = books.filter(b => b.author.name === args.name)
+			return booksAsked
+		},
+		findAuthor: async (root, args) => {
+			const author = await Author.findById(args.id)
+			return author
+		},
+		me: (root, args, context) => {
+			return context.currentUser
+		}
+	},
+	Mutation: {
+		addBook: async (root, args, context) => {
+			const author = await Author.findOne({ name: args.authorName })
+			const currentUser = context.currentUser
+			
+			if (!currentUser) {
+				throw new AuthenticationError('not authenticated')
+			} 
+			
+			// console.log(1, author)
+			try{
+				if (!author) {
+					const authorNew = new Author({
+						name: args.authorName
+					})
+
+					await authorNew.save()
+						
+					const bookNew = new Book({
+						title: args.title,
+						published: args.published,
+						genres: args.genres,
+						author: authorNew._id
+					})
+					
+					await bookNew.save(
+						Author.collection.updateOne(
+							{_id: authorNew._id},
+							{
+								$push: { books: { $each: [bookNew._id] } }
+							}
+						)
+					)
+							
+					const bookAsked = await Book.findOne({ title: bookNew.title }).populate('author')	
+					
+					pubsub.publish('BOOK_ADDED', { bookAdded: bookAsked })
+					 
+					return bookAsked
+				
+				} else {
+					// console.log(5, author)
+					
+					const book = new Book({
+						title: args.title,
+						published: args.published,
+						genres: args.genres,
+						author: author._id
+					})
+					
+					// console.log(6, book)
+				
+					await book.save(
+						Author.collection.updateOne(
+							{_id: author._id},
+							{
+								$push: { books: { $each: [book._id] } }
+							}
+						)
+					)
+					
+					const bookAsked = await Book.findOne({ title: book.title }).populate('author')
+					
+					pubsub.publish('BOOK_ADDED', { bookAdded: bookAsked })
+					
+					return bookAsked
+				}
+			} catch(error) {
+				throw new UserInputError(error.message, {
+					invalidArgs: args,
+				})
+			}
+		},
+		editAuthor: async (root, args, context) => {
+			const author = await Author.findOne({ name: args.name })
+			// console.log(1, author)
+			const currentUser = context.currentUser
+			console.log(1, currentUser)
+			
+			if (!currentUser) {
+				throw new AuthenticationError('not authenticated')
+			} 
+			
+			try{
+				Author.collection.updateOne(
+					{_id: author._id},
+					{
+						$set: { born: args.setBornTo }
+					}
+				)
+				
+				const updatedAuthor = await Author.findOne({ name: args.name })
+				
+				pubsub.publish('AUTHOR_EDITED', { authorEdited: updatedAuthor })
+				
+				return updatedAuthor
+				
+			} catch(error) {
+				throw new UserInputError(error.message, {
+					invalidArgs: args,
+				})
+			}
+			// console.log(2, updatedAuthor)
+		},
+		createUser: async (root, args) => {
+			try {
+				const saltRounds = 10
+				const passwordHash = await bcrypt.hash(args.password, saltRounds)
+
+				const user = new User({
+					username: args.username,
+					favoriteGenre: args.favoriteGenre,
+					passwordHash
+				})
+
+				const updatedUser = await user.save()
+				
+				pubsub.publish('USER_CREATED', { userCreated: updatedUser })
+				
+				return updatedUser
+			} catch(error) {
+				throw new UserInputError(error.message, {
+					invalidArgs: args,
+				})
+			}
+		},
+		login: async (root, args) => {
+			const user = await User.findOne({ username: args.username })
+			
+			try {
+				if (user) {
+					const passwordCorrect = await bcrypt.compare(args.password, user.passwordHash)
+					if (passwordCorrect) {
+						const userForToken = {
+							username: user.username,
+							id: user._id
+						}
+						
+					const token = { value: jwt.sign(userForToken, JWT_SECRET) }
+					
+					pubsub.publish('LOGIN', { logIn: token })
+					
+					return token
+					}
+				}
+			} catch(error) {
+				throw new UserInputError("wrong credentials")
+			}
+		}
+	},
+	Subscription: {
+		bookAdded: {
+			subscribe: () => pubsub.asyncIterator(['BOOK_ADDED'])
+		}
+	}
+}
+
+
+
+const server = new ApolloServer({
+	typeDefs,
+	resolvers,
+	context: async ({ req }) => {
+		const auth = req ? req.headers.authorization : null
+			if (auth && auth.toLowerCase().startsWith('bearer ')) {
+				const decodedToken = jwt.verify(auth.substring(7), JWT_SECRET)
+				const currentUser = await User.findById(decodedToken.id)
+					
+				return { currentUser }
+		}
+	}
+})
+
+
+
+server.listen().then(({ url, subscriptionsUrl }) => {
+  console.log(`Server ready at ${url}`)
+  console.log(`Subscriptions ready at ${subscriptionsUrl}`)
+})
+
+
+************************************************************************************************************************
+
+import React, { useState } from 'react'
+import ReactDOM from 'react-dom'
+import { BrowserRouter as Router,Route, Link, withRouter, Redirect } from 'react-router-dom'
+import { ApolloProvider, Query, Mutation, Subscription } from 'react-apollo'
+import { Navbar, Nav, Table, Form, Button } from 'react-bootstrap'
+import { ApolloClient } from 'apollo-client'
+import { gql } from 'apollo-boost'
+
+import { createHttpLink } from 'apollo-link-http'
+import { InMemoryCache } from 'apollo-cache-inmemory'
+import { setContext } from 'apollo-link-context'
+import { split } from 'apollo-link'
+import { WebSocketLink } from 'apollo-link-ws'
+import { getMainDefinition } from 'apollo-utilities'
+
+
+
+const wsLink = new WebSocketLink({
+	uri: `ws://localhost:4000/graphql`,
+	options: { reconnect: true }
+})
+
+const httpLink = createHttpLink({
+	uri: 'http://localhost:4000/graphql'
+})
+
+const authLink = setContext((_, { headers }) => {
+	const token = localStorage.getItem('LoggedIn User')
+		return {
+			headers: {
+				...headers,
+				authorization: token ? `bearer ${token}` : null,
+		}
+	}
+})
+
+const link = split(
+	({ query }) => {
+		const { kind, operation } = getMainDefinition(query)
+		return kind === 'OperationDefinition' && operation === 'subscription'
+	},
+	wsLink,
+	authLink.concat(httpLink),
+)
+
+const client = new ApolloClient({
+	link,
+	cache: new InMemoryCache()
+})
+
+
+
+const query = gql`
+{
+	allAuthors {
+		id
+		name
+		born
+		bookCount
+	}
+}
+`
+
+
+const query_books = gql`
+{
+	allBooks {
+		title
+		published
+		author {
+			id
+			name
+		}
+		id
+		genres
+	}
+}
+`
+
+const query_me = gql`
+{
+	me {
+		username 
+		favoriteGenre
+	}
+}
+`
+
+
+const FIND_BOOKS = gql`
+	query findBooksByName($nameToSearch: String!) {
+		findBooks(name: $nameToSearch) {
+			id
+			title
+			published
+		}
+	}
+`
+
+
+const FIND_AUTHOR = gql`
+	query findAuthorById($id: ID!) {
+		findAuthor(id: $id) {
+			id
+			name
+		}
+	}
+`
+
+
+const CREATE_BOOK = gql`
+	mutation createBook($title: String!, $published: Int!, $author: String!, $genres: [String!]!) {
+		addBook(
+			title: $title,
+			published: $published,
+			authorName: $author,
+			genres: $genres,
+		) {	
+			title
+			published
+			author {
+				id
+				name
+			}
+			id
+			genres
+		}
+	}
+`
+
+
+const BOOK_ADDED = gql`
+	subscription {
+		bookAdded {
+			title
+			published
+			author {
+				id
+				name
+			}
+			id
+			genres
+		}
+	}
+`
+
+
+const EDIT_AUTHOR = gql`
+	mutation editAuthor($name: String!, $setBornTo: Int!) {
+		editAuthor(
+			name: $name,
+			setBornTo: $setBornTo
+		) {
+			name
+			id
+			born
+		}
+	}
+`
+
+
+const LOGIN = gql`
+	mutation login($username: String!, $password: String!) {
+		login(
+			username: $username,
+			password: $password
+		) {
+			value
+		}
+	}
+`
+
+
+const CREATE_USER = gql`
+	mutation createUser($username: String!, $password: String!, $favoriteGenre: String!) {
+		createUser(
+			username: $username,
+			password: $password,
+			favoriteGenre: $favoriteGenre
+		) {
+			username
+			passwordHash
+			favoriteGenre
+			id
+		}
+	}
+`
+
+
+
+const Home = () => {
+	return(
+		<div>
+			<h1>Welcome to Book Club !</h1>
+		</div>
+	)
+}
+
+
+const AuthorForm = (props) => {
+	// console.log(props)
+	const [ name, setName ] = useState('')
+	const [ born, setBorn ] = useState('')
+	
+	const handleSetBirth = async(event) => {
+		event.preventDefault()
+		
+		const setBornTo = Number(born)
+		
+		const result = await props.editAuthor({
+			variables: { name, setBornTo }
+		})
+		
+		console.log(result)
+		
+		if (result) {
+			const note = {
+				message: `${name}: ${born} added`,
+				type: ''
+			}
+
+			props.setNotification(note)
+
+			const original = {
+				message: null,
+				type: ''
+			}
+
+			setTimeout(() => props.setNotification(original), 5000)
+		} 
+		
+		setName('')
+		setBorn('')	
+	} 
+	
+	return (
+		<div>
+			<Form onSubmit = {handleSetBirth}>
+			<Form.Group>
+				<div>
+					<Form.Label>Name: </Form.Label> 
+					<Form.Control value = {name} onChange = {(event) => setName(event.target.value)} />
+				</div>
+				
+				<br />
+				
+				<div>
+					<Form.Label>Birthday: </Form.Label> 
+					<Form.Control value = {born} onChange = {(event) => setBorn(event.target.value)} />
+				</div>
+				
+				<br />
+				
+				<Button variant="primary" type = 'submit'>Change Birthday</Button>
+			</Form.Group>
+			</Form>
+		</div>
+	)
+}
+
+
+
+const Authors = (props) => {
+	const handleError = (error) => {
+		if (error.graphQLErrors.length === 0) {
+			const note = {
+				message: error.networkError.message,
+				type: 'error'
+			}
+			
+			props.setNotification(note)
+		} else {
+			const note = {
+				message: error.graphQLErrors[0].message,
+				type: 'error'
+			}
+			
+			props.setNotification(note)
+		}
+		
+		const original = {
+			message: null,
+			type: ''
+		}
+			
+		setTimeout(() => props.setNotification(original), 5000)
+	}
+	
+	return(
+		<div>
+			<h2>Authors</h2>
+			<Query query = {query}>
+				{(result) => {
+					if (result.loading) {
+						return <div>Loading...</div>
+					}
+					return (
+						<div>
+							<Table striped bordered hover variant="dark">
+								<thead>
+									<tr>
+										<th>&nbsp;</th>
+										<th>Born</th>
+										<th>Books</th>
+									</tr>
+								</thead>
+								{console.log(result.data)}
+								{result.data.allAuthors.map(a => 
+									<tbody key = {a.id}>
+										<tr>
+											<td><Link to = {`/authors/${a.id}`}>{a.name}</Link></td>
+											<td>{a.born}</td>
+											<td>&nbsp;&nbsp;&nbsp;{a.bookCount}</td>
+										</tr>
+									</tbody>
+								)}
+							</Table>
+						</div>
+					)
+				}}
+			</Query>
+			
+			<br />
+			<br />
+			<br />
+			
+			<h2>Set Birthday</h2>
+			<Mutation mutation = {EDIT_AUTHOR} refetchQueries = {[{query: query}]} onError = {(error) => handleError(error)}>
+				{(editAuthor) => <AuthorForm editAuthor = {editAuthor} setNotification = {props.setNotification} />}
+			</Mutation>
+		</div>
+	)
+}
+
+
+
+const authorById = async(ID) => {
+	const result = await client.query({
+		query: FIND_AUTHOR,
+		variables: { id: ID }
+	})
+	
+	// console.log(result.data.findAuthor)
+	return result.data.findAuthor
+}
+
+
+const Result = async(authorNames) => {
+	const result = await client.query({
+		query: FIND_BOOKS,
+		variables: { nameToSearch: authorNames }
+	})
+
+	// console.log(result.data.findBooks)
+
+	return result.data.findBooks
+}
+		
+const Author = ({ author }) => {
+	// console.log(author)
+	let response 
+	const [ authorNames, setAuthorNames ] = useState('')
+	const [ authorBooks, setAuthorBooks ] = useState(null)
+	author.then(result => setAuthorNames(result.name))
+	// console.log(authorNames)
+	
+	
+	if (authorNames.length > 0) {
+		response = Result(authorNames)
+		response.then(result => setAuthorBooks(result))
+	}
+	
+	// console.log(response)
+	// console.log(authorBooks)
+	
+	// const badBooks = (books) => {
+		// return books === null || books === undefined || books.length === 0
+	// }
+	// if (badBooks(authorBooks)) {
+	if (authorBooks === null) {
+		return <div>Loading...</div>
+	}
+	return(
+		<div>
+			{authorBooks.length >= 1 
+				? <div>
+					{authorBooks.map(book => 
+						<div key = {book.id}>
+							<p>Title: {book.title}</p>
+							<p>Published: {book.published}</p>
+							<br />
+						</div>
+					)}
+				</div> 
+				: <div>Loading...</div>
+			}
+		</div>
+	)
+}
+
+
+
+const Books = () => {
+	const [ query, setQuery ] = useState(null)
+	
+	return(
+		<div>
+			<h2>Books</h2>
+			<Query query = {query_books}>
+				{(result) => {
+					if (result.loading) {
+						return <div>Loading...</div>
+					}
+
+					return (
+						<div>
+								{query !== null
+									? <div>
+									<h3>Genre Mode</h3>
+										<Table striped bordered hover variant="dark">
+											<thead>
+												<tr>
+													<th>&nbsp;</th>
+													<th>Author</th>
+													<th>Published</th>
+													<th>Genres</th>
+												</tr>
+											</thead>
+											
+										{console.log(result.data)}
+										
+										{result.data.allBooks.filter(book => book.genres.indexOf(query) !== -1).map(b =>
+											<tbody key = {b.id}>
+												<tr>
+													<td>{b.title}</td>
+													<td>{b.author.name}</td>
+													<td>{b.published}</td>
+													<td>{b.genres.join(', ')}</td>
+												</tr>
+											</tbody>
+										)}
+										</Table>
+									  </div>
+									  
+									: <div>
+										<Table striped bordered hover variant="dark">
+											<thead>
+												<tr>
+													<th>&nbsp;</th>
+													<th>Author</th>
+													<th>Published</th>
+													<th>Genres</th>
+												</tr>
+											</thead>
+												
+											{result.data.allBooks.map(b =>
+												<tbody key = {b.id}>
+													<tr>
+														<td>{b.title}</td>
+														<td>{b.author.name}</td>
+														<td>{b.published}</td>
+														<td>{b.genres.join(', ')}</td>
+													</tr>
+												</tbody>
+											)}
+										</Table>
+									  </div>
+								}
+						
+						<br />
+						<br />
+						
+								<Button variant="primary" onClick = {() => setQuery('computer science')}>computer science</Button>
+								<Button variant="primary" onClick = {() => setQuery('patterns')}>refactoring</Button>
+								<Button variant="primary" onClick = {() => setQuery('agile')}>agile</Button>
+								<Button variant="primary" onClick = {() => setQuery('patterns')}>patterns</Button>
+								<Button variant="primary" onClick = {() => setQuery('design')}>design</Button>
+								<Button variant="primary" onClick = {() => setQuery('classic')}>classic</Button>
+								<Button variant="primary" onClick = {() => setQuery('crime')}>crime</Button>
+								<Button variant="primary" onClick = {() => setQuery('revolution')}>revolution</Button>
+								<Button variant="primary" onClick = {() => setQuery('romance')}>romance</Button>
+						</div>
+					)
+				}}
+			</Query>	
+		</div>
+	)
+}
+
+
+
+const BookForm = (props) => {
+	const [ title, setTitle ] = useState('')
+	const [ published_String, setPublished ] = useState('')
+	const [ author, setAuthor ] = useState('')
+	const [ genre, setGenre ] = useState('')
+	const [ genres, setGenres ] = useState([])
+	
+	const handleAddGenre = () => {
+		setGenres(genres.concat(genre))
+		setGenre('')
+	}
+	
+	const handleAddBook = async(event) => {
+		event.preventDefault()
+		const published = Number(published_String)
+  
+		const result = await props.addBook({ 
+			variables: {title, published, author, genres}
+		})
+		
+		if (result) {
+			const note = {
+			message: `${title} by ${author} in ${published_String} added`,
+			type: ''
+		}
+
+			props.setNotification(note)
+
+			const original = {
+				message: null,
+				type: ''
+			}
+
+			setTimeout(() => props.setNotification(original), 5000)
+		}
+		
+	
+		setTitle('')
+		setPublished('')
+		setAuthor('')
+		setGenres([])
+	}
+	
+	return(
+		<div>
+			
+			<Form>
+			<Form.Group>
+			
+			<div>
+				<Form.Label>Title: </Form.Label>
+				<Form.Control value = {title} onChange = {(event) => setTitle(event.target.value)} />
+			</div>
+			
+			<br />
+			
+			<div>
+				<Form.Label>Published: </Form.Label>
+				<Form.Control value = {published_String} onChange = {(event) => setPublished(event.target.value)} />
+			</div>
+			
+			<br />
+			
+			<div>
+				<Form.Label>Author: </Form.Label>
+				<Form.Control value = {author} onChange = {(event) => setAuthor(event.target.value)} />
+			</div>
+			
+			</Form.Group>
+			</Form>
+			
+			<br />
+			
+			<div>
+				<Form.Label>Genre: </Form.Label>
+				<Form.Control value = {genre} onChange = {(event) => setGenre(event.target.value)} />
+				
+				<br />
+				<Button variant="primary" onClick = {handleAddGenre}>Add Genre</Button>
+				<br />
+				
+				Genres: {genres.join(', ')}
+			</div>
+			
+			<br />
+			<br />
+			<br />
+			
+			<Button variant="primary" onClick = {handleAddBook}>Create Book</Button>
+		</div>
+	)
+}
+	
+	
+
+const Addition = (props) => {		
+		const handleError = (error) => {
+		
+		if (error.graphQLErrors.length === 0) {
+			const note = {
+				message: error.networkError.message,
+				type: 'error'
+			}
+			
+			props.setNotification(note)
+		} else {
+			const note = {
+				message: error.graphQLErrors[0].message,
+				type: 'error'
+			}
+			
+			props.setNotification(note)
+		}
+		
+		
+		const original = {
+			message: null,
+			type: ''
+		}
+			
+		setTimeout(() => props.setNotification(original), 5000)
+	}
+	
+	return(
+		<div>
+			<h2>Add Books</h2>
+			
+			<br />
+			<br />
+			
+			<Mutation mutation = {CREATE_BOOK} onError = {(error) => handleError(error)} refetchQueries={[{ query: query }, {query: query_books}]}>
+				{(addBook) => <BookForm addBook = {addBook} setNotification = {props.setNotification}/>}
+			</Mutation>					
+		</div>
+	)
+}
+
+
+const Login = (props) => {
+	// console.log(props)
+	const [loginVisible, setLoginVisible] = useState(false)
+
+	const hideWhenVisible = { display: loginVisible ? 'none' : '' }
+	const showWhenVisible = { display: loginVisible ? '' : 'none' }
+	
+	const handleError = (error) => {
+		
+		const note = {
+			message: error.graphQLErrors[0].message,
+			type: 'error'
+		}
+		
+		props.setNotification(note)
+		
+		const original = {
+			message: null,
+			type: ''
+		}
+			
+		setTimeout(() => props.setNotification(original), 5000)
+	}
+
+	return(
+		<div>
+		<br />
+		<br />
+		<br />
+			<h2>Login Form</h2>
+			<h5>The first time user ? Please register first !</h5>
+			<Mutation mutation = {LOGIN}>
+				{(login) => <LoginForm login = {login} setToken = {props.setToken} setNotification = {props.setNotification} />}
+			</Mutation>
+		<br />
+		<br />
+		<br />	
+			<div style={hideWhenVisible}>
+				<Button variant = "primary" onClick={() => setLoginVisible(true)}>Open Register Form</Button>
+			</div>
+			
+			<div style={showWhenVisible}>
+			<h2>Register Form</h2>
+				<Mutation mutation = {CREATE_USER} onError = {(error) => handleError(error)}>
+					{(createUser) => <RegisterForm createUser = {createUser} setNotification = {props.setNotification} />}
+				</Mutation>
+		<br />
+		<br />	
+				<Button variant = "primary" onClick={() => setLoginVisible(false)}>Close Register Form</Button>	
+			</div>
+		</div>
+	)
+}
+
+
+const LoginFormwithHistory = (props) => {
+	// console.log(props)
+	const [ username, setUsername ] = useState('')
+	const [ password, setPassword ] = useState('')
+	
+	const handleLogin = async(event) => {
+		event.preventDefault()
+		
+		const result = await props.login({
+			variables: { username, password }
+		})
+		
+		// console.log(result)
+		
+		if (result.data.login !== null) {
+			const token = result.data.login.value
+			props.setToken(token)
+			localStorage.setItem('LoggedIn User', token)
+			
+			setUsername('')
+			setPassword('')
+			props.history.push('/') 
+			
+			const note = {
+				message: 'Logged In! Welcome!',
+				type: ''
+			}
+			
+			props.setNotification(note)
+			
+			const original = {
+				message: null,
+				type: ''
+			}
+			
+			setTimeout(() => props.setNotification(original), 5000)
+		} else {
+			const note = {
+				message: 'Wrong Username or Password!',
+				type: 'error'
+			}
+			
+			props.setNotification(note)
+			
+			const original = {
+				message: null,
+				type: 'error'
+			}
+			
+			setTimeout(() => props.setNotification(original), 5000)
+		}
+	}
+	
+	return(
+		<div>
+			<Form onSubmit = {handleLogin}>
+			<Form.Group>
+				<br />
+				<br />
+				
+				<div>
+					<Form.Label>Username: </Form.Label>
+					<Form.Control value = {username} onChange = {(event) => setUsername(event.target.value) } />
+				</div>
+				
+				<br />
+				<br />
+				
+				<div>
+					<Form.Label>Password: </Form.Label>
+					<Form.Control value = {password} onChange = {(event) => setPassword(event.target.value)} />
+				</div>
+				
+				<br />
+				<br />
+				
+				<Button variant = "primary" type = "submit">Log In</Button>
+			</Form.Group>
+			</Form>
+		</div>
+	)
+} 
+
+const LoginForm = withRouter(LoginFormwithHistory)
+
+
+const Logout = (props) => {
+	props.setToken(null)
+	localStorage.clear()
+	client.resetStore()
+	
+	return(
+		<div>
+		<br />
+		<br />
+			<h1>You already successfully logged out!</h1>
+		</div>
+	)
+}
+
+
+const RegisterForm = (props) => {
+	// console.log(props)
+	const [ username, setUsername ] = useState('')
+	const [ password, setPassword ] = useState('')
+	const [ favoriteGenre, setFavoriteGenre ] = useState('')
+	
+	const handleRegister = async (event) => {
+		event.preventDefault()
+		
+		const result = await props.createUser({
+			variables: { username, password, favoriteGenre}
+		})
+		
+		if (result !== undefined) {
+			const note = {
+			message: 'Register Successfully! Please Log In!',
+			type: ''
+		}
+
+			props.setNotification(note)
+
+			const original = {
+				message: null,
+				type: ''
+			}
+
+			setTimeout(() => props.setNotification(original), 5000)
+		}
+			
+		setUsername('')
+		setPassword('')
+		setFavoriteGenre('')
+	}
+	
+	return(
+		<div>
+		<br />
+			<Form onSubmit = {handleRegister}>
+			<Form.Group>
+				<Form.Label>Username: </Form.Label>
+				<Form.Control value = {username} onChange = {(event) => setUsername(event.target.value)} />
+				
+				<br />
+				<br />
+				<br />
+				
+				<Form.Label>Password: </Form.Label>
+				<Form.Control value = {password} onChange = {(event) => setPassword(event.target.value)} />
+				
+				<br />
+				<br />
+				<br />
+			</Form.Group>	
+			
+			<Form.Group key = {'inline-radio'} className="mb-3"> 
+				<Form.Label>Your favorite Genre: </Form.Label>
+				<br />
+				
+				computer science<Form.Check inline type = "radio" name = "genre" value = "computer science" onClick = {(event) => setFavoriteGenre(event.target.value)} /> 
+				refactoring<Form.Check inline type = "radio" name = "genre" value = "refactoring" onClick = {(event) => setFavoriteGenre(event.target.value)} /> 
+				agile<Form.Check inline type = "radio" name = "genre" value = "agile" onClick = {(event) => setFavoriteGenre(event.target.value)} /> 
+				patterns<Form.Check inline type = "radio" name = "genre" value = "patterns" onClick = {(event) => setFavoriteGenre(event.target.value)} /> 
+				design<Form.Check inline type = "radio" name = "genre" value = "design" onClick = {(event) => setFavoriteGenre(event.target.value)} /> 
+				classic<Form.Check inline type = "radio" name = "genre" value = "classic" onClick = {(event) => setFavoriteGenre(event.target.value)} /> 
+				revolution<Form.Check inline type = "radio" name = "genre" value = "revolution" onClick = {(event) => setFavoriteGenre(event.target.value)} /> 
+				romance<Form.Check inline type = "radio" name = "genre" value = "romance" onClick = {(event) => setFavoriteGenre(event.target.value)} /> 
+				
+				<br />
+				<br />
+				<br />
+				
+			</Form.Group>	
+				<Button variant = "primary" type = "submit">Register</Button>
+			
+			</Form>
+		</div>
+	)
+}
+
+
+const User = () => {
+	return(
+		<div>
+			<Query query = {query_me}>
+				{(result) => {
+					
+					if (result.loading) {
+						return <div>Loading...</div>
+					}
+					
+					console.log(result.data)
+					
+					return(
+						<div>
+							<br />
+							<h2>User Information</h2>
+							<h4>Username: {result.data.me.username}</h4>
+							<h4>Favorite Genre: {result.data.me.favoriteGenre}</h4>
+							
+							<br />
+							<br />
+							
+							<h2>Recommendation based on your taste</h2>
+							<Query query = {query_books}>
+								{(Result) => {
+									if (Result.loading) {
+										return <div>Loading...</div>
+									}
+									
+									return(
+										<div>
+											<table>
+												<thead>
+													<tr>
+														<th>&nbsp;</th>
+														<th>Author</th>
+														<th>Published</th>
+														<th>Genres</th>
+													</tr>
+												</thead>
+												
+												{Result.data.allBooks.filter(b => b.genres.indexOf(result.data.me.favoriteGenre) !== -1).map(b =>
+													<tbody key = {b.id}>
+														<tr>
+															<td>{b.title}</td>
+															<td>{b.author.name}</td>
+															<td>{b.published}</td>
+															<td>{b.genres.join(', ')}</td>
+														</tr>
+													</tbody>
+												)}
+											</table>
+										</div>
+									)
+								}}
+							</Query>
+						</div>
+					)
+				}}
+			</Query>
+		</div>
+	)
+}
+	
+	
+const Notification = (props) => {
+	// console.log(props)
+	
+	const style = {
+		color: props.notification.type === "error" ? "red" : "green",
+		fontSize: 30,
+		border: props.notification.type === "error" ? "2px solid red" : "2px solid green",
+		borderRadius: "10px",
+		margin: "20px",
+		paddingLeft: "20px"
+	}
+	
+	if (props.notification.message === null) {
+		return null
+	} else {
+		return (
+			<div style = {style}>
+				{props.notification.message}
+			</div>
+		)
+	}
+}
+	
+
+const App = () => {
+	const [ token, setToken ] = useState(null)
+	const [ notification, setNotification ] = useState({
+		message: null,
+		type: ''
+	}) 
+	
+	return(
+		<div className = "container">
+			<Router>
+				<div>
+					<Navbar collapseOnSelect expand="lg" bg="dark" variant="dark">
+						<Navbar.Toggle aria-controls="responsive-navbar-nav" />
+						<Navbar.Collapse id="responsive-navbar-nav">
+							<Nav className = "mr-auto">
+							
+								<Nav.Link href="#" as="span">
+									<Link to = "/">Home</Link> &nbsp;&nbsp;&nbsp;
+								</Nav.Link>
+								
+								<Nav.Link href="#" as="span">
+									<Link to = "/authors">Authors</Link> &nbsp;&nbsp;&nbsp;
+								</Nav.Link>
+								
+								<Nav.Link href="#" as="span">
+									<Link to = "/books">Books</Link> &nbsp;&nbsp;&nbsp;
+								</Nav.Link>
+								
+								<Nav.Link href="#" as="span">
+									<Link to = "/add_book">Add Book</Link> &nbsp;&nbsp;&nbsp;
+								</Nav.Link>
+								
+								<Nav.Link href="#" as="span">
+									<Link to = 'user'>User Account</Link> &nbsp;&nbsp;&nbsp;
+								</Nav.Link>
+								
+								<Nav.Link href="#" as="span">
+									{
+										token 
+										? <Link to = '/logout'>Log Out</Link>						
+										: <Link to = "/login">Log In</Link>
+									}
+								</Nav.Link>
+								
+							</Nav>
+						</Navbar.Collapse>
+					</Navbar>
+				</div>
+				
+				<br />
+				<br />
+				<br />
+				
+				<Notification notification = {notification} />
+				
+				<Subscription subscription = {BOOK_ADDED}>
+					{(result) => {
+						if(result.loading) {
+							return null
+						}
+
+						return(
+							<div>
+							<h1 style = {{color: "purple"}}>{result.data.bookAdded.title} has been updated!</h1>
+							</div>
+						)
+					}}
+				</Subscription>
+							
+				<div>
+					<Route exact path = "/" render = {() => <Home />} />
+					<Route exact path = "/authors" render = {() => <Authors setNotification = {(notification) => setNotification(notification)} />} />
+					<Route exact path = "/authors/:id" render = {({match}) => 
+						<Author author = {authorById(match.params.id)} />} />
+					<Route path = "/books" render = {() => <Books />} />
+					<Route path = "/add_book" render = {() => <Addition setNotification = {(notification) => setNotification(notification)} />} />
+					<Route path = "/login" render = {() => 
+						<Login 
+							setToken = {(token) => setToken(token)} 
+							setNotification = {(notification) => setNotification(notification)} 
+						/> 
+					}/>
+					<Route path = "/logout" render = {() => <Logout setToken = {(token) => setToken(token)} />} />
+					<Route path = "/user" render = {() => token ? <User /> : <Redirect to = '/login' />} />
+				</div>
+				
+				<br />
+				<br />
+				<br />
+				
+				<em>BookClub Website Created by Daisy on 2019</em>
+			</Router>
+		</div>
+	)
+}
+
+
+
+ReactDOM.render(
+	<ApolloProvider client={client} >
+		<App />
+	</ApolloProvider>, 
+	document.getElementById('root')
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
